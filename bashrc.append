@@ -1,0 +1,5 @@
+# >>> dotfiles zsh-switch >>>
+if [ -t 1 ] && command -v zsh >/dev/null 2>&1 && [ -z "$ZSH_VERSION" ]; then
+  exec zsh -l
+fi
+# <<< dotfiles zsh-switch <<<
