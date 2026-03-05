@@ -4,10 +4,31 @@ set -euo pipefail
 DOTFILES_DIR="$(cd "$(dirname "$0")" && pwd)"
 MARKER="# >>> dotfiles zsh-switch >>>"
 
+# 0. Wait for apt locks (startup script may be installing packages concurrently)
+echo "Waiting for apt locks..."
+while sudo fuser /var/lib/dpkg/lock-frontend /var/lib/apt/lists/lock /var/cache/apt/archives/lock >/dev/null 2>&1; do
+    sleep 2
+done
+while pgrep -x apt >/dev/null 2>&1 || pgrep -x apt-get >/dev/null 2>&1 || pgrep -x dpkg >/dev/null 2>&1; do
+    sleep 2
+done
+
+# 0b. Install zsh if not present (with retry)
+if ! command -v zsh >/dev/null 2>&1; then
+  echo "Installing zsh..."
+  for i in 1 2 3; do
+    sudo apt-get update -y && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y zsh && break
+    echo "  Retry $i/3..."
+    sleep 5
+  done
+  command -v zsh >/dev/null 2>&1 || { echo "ERROR: zsh failed to install"; exit 1; }
+fi
+
 # 1. Install Oh My Zsh (unattended, skip if present)
 if [[ ! -d "$HOME/.oh-my-zsh" ]]; then
   echo "Installing Oh My Zsh..."
-  sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended
+  export RUNZSH=no CHSH=no KEEP_ZSHRC=yes
+  sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
 fi
 
 # 2. Clone Powerlevel10k theme
@@ -31,8 +52,9 @@ if [[ ! -d "$SYNHL_DIR" ]]; then
   git clone --depth=1 https://github.com/zsh-users/zsh-syntax-highlighting.git "$SYNHL_DIR"
 fi
 
-# 5. Copy zshrc (repo is source of truth)
+# 5. Copy zshrc (repo is source of truth — remove any existing non-dotfiles version)
 echo "Installing .zshrc..."
+[ -f "$HOME/.zshrc" ] && [ ! -L "$HOME/.zshrc" ] && rm -f "$HOME/.zshrc"
 cp "$DOTFILES_DIR/zshrc" "$HOME/.zshrc"
 
 # 6. Copy p10k config
@@ -55,7 +77,7 @@ if [[ -n "$ZSH_PATH" ]]; then
   if [[ "$current_shell" != "$ZSH_PATH" ]]; then
     echo "Setting default shell to zsh..."
     if command -v chsh >/dev/null 2>&1; then
-      chsh -s "$ZSH_PATH" 2>/dev/null || echo "Warning: chsh failed (may need sudo). Shell not changed."
+      sudo chsh -s "$ZSH_PATH" "$(id -un)" 2>/dev/null || chsh -s "$ZSH_PATH" 2>/dev/null || echo "Warning: chsh failed. Shell not changed."
     else
       echo "Warning: chsh not available. Default shell not changed."
     fi
