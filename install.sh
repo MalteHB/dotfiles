@@ -24,6 +24,8 @@ if ! command -v zsh >/dev/null 2>&1; then
   command -v zsh >/dev/null 2>&1 || { echo "ERROR: zsh failed to install"; exit 1; }
 fi
 
+bash "$DOTFILES_DIR/install-bwork-runner.sh"
+
 # 1. Install Oh My Zsh (unattended, skip if present)
 if [[ ! -d "$HOME/.oh-my-zsh" ]]; then
   echo "Installing Oh My Zsh..."
@@ -70,7 +72,7 @@ for rc in "$HOME/.bashrc" "$HOME/.profile"; do
   fi
 done
 
-# 8. Set default shell to zsh
+# 9. Set default shell to zsh
 ZSH_PATH="$(command -v zsh || true)"
 if [[ -n "$ZSH_PATH" ]]; then
   current_shell="$(getent passwd "$(whoami)" | cut -d: -f7)"

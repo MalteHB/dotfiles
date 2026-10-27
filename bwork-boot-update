@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+set -u
+
+repo="${BWORK_REPO:-${HOME}/code}"
+runner="${BWORK_RUNNER:-${repo}/bin/bwork-runner}"
+log="${BWORK_BOOT_LOG:-${HOME}/.local/state/bwork-runner/boot-update.log}"
+lock="${BWORK_BOOT_LOCK:-${HOME}/.local/state/bwork-runner/boot.lock}"
+
+mkdir -p "$(dirname "$log")" "$(dirname "$lock")"
+exec 9>"$lock"
+flock -n 9 || { echo "$(date -u +%FT%TZ) skip: boot update already running" >>"$log"; exit 0; }
+exec >>"$log" 2>&1 </dev/null
+export GIT_TERMINAL_PROMPT=0
+
+echo "$(date -u +%FT%TZ) runner boot"
+wait_seconds=${BWORK_BOOT_WAIT_SECONDS:-120}
+if [[ ! "$wait_seconds" =~ ^[0-9]+$ ]]; then wait_seconds=120; fi
+for ((waited=0; waited<wait_seconds; waited++)); do
+  [[ -x "$runner" ]] && break
+  sleep 1 9>&-
+done
+if [[ ! -x "$runner" ]]; then
+  echo "skip: no runner at $runner; clone the repository to $repo, then run bwork-boot-update again"
+  exit 0
+fi
+
+start() {
+  "$runner" up --no-build 9>&-
+}
+
+git_repo() {
+  git -C "$repo" "$@" 9>&-
+}
+
+if [[ "$(git_repo rev-parse --show-toplevel 2>/dev/null)" != "$(realpath "$repo" 2>/dev/null)" ]]; then
+  echo "skip update: no checkout at $repo"
+  start
+  exit $?
+fi
+
+if [[ "$(git_repo rev-parse --abbrev-ref HEAD 2>/dev/null)" != main ]]; then
+  echo "skip update: $repo is not on main"
+  start
+  exit $?
+fi
+if ! changes=$(git_repo status --porcelain 2>/dev/null); then
+  echo "skip update: checkout status failed"
+  start
+  exit $?
+fi
+if [[ -n "$changes" ]]; then
+  echo "skip update: local changes in $repo"
+  start
+  exit $?
+fi
+if [[ "$(git_repo rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null)" != origin/main ]]; then
+  echo "skip update: main does not track origin/main"
+  start
+  exit $?
+fi
+
+if ! timeout 120 git -C "$repo" fetch -q origin main 9>&-; then
+  echo "skip update: fetch failed"
+  start
+  exit $?
+fi
+if ! git_repo merge -q --ff-only FETCH_HEAD; then
+  echo "skip update: origin/main is not a fast-forward of main"
+  start
+  exit $?
+fi
+echo "starting runner from current main"
+"$runner" up 9>&- && exit 0
+echo "build or start failed; starting installed runner"
+start
