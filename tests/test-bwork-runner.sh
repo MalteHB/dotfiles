@@ -109,10 +109,53 @@ EOF_SUDO
   assert_count "$test_home/personalize" '# keep' 1
   test -x "$test_home/.local/bin/bwork-boot-update"
 }
+run_existing_startup() {
+  local test_home before
+  test_home=$(mktemp -d)
+  mkdir -p "$test_home/.local/bin"
+  printf '#!/bin/sh\n/home/coder/.local/bin/bwork-boot-update &\n' > "$test_home/personalize"
+  printf 'existing helper\n' > "$test_home/.local/bin/bwork-boot-update"
+  before=$(sha256sum "$test_home/personalize" "$test_home/.local/bin/bwork-boot-update")
+  HOME="$test_home" bash "$dotfiles/install-bwork-runner.sh" > "$test_home/install.log"
+  test "$before" = "$(sha256sum "$test_home/personalize" "$test_home/.local/bin/bwork-boot-update")"
+  assert_contains "$test_home/install.log" 'left its helper and hook unchanged'
+  test_home=$(mktemp -d)
+  mkdir -p "$test_home/.local/bin"
+  printf 'external helper\n' > "$test_home/.local/bin/bwork-boot-update"
+  HOME="$test_home" bash "$dotfiles/install-bwork-runner.sh" > "$test_home/install.log"
+  test ! -e "$test_home/personalize"
+  assert_contains "$test_home/.local/bin/bwork-boot-update" 'external helper'
+}
+run_startup_opt_out() {
+  local test_home
+  test_home=$(mktemp -d)
+  mkdir -p "$test_home/.local/state/bwork-runner"
+  touch "$test_home/.local/state/bwork-runner/boot.external"
+  HOME="$test_home" bash "$dotfiles/install-bwork-runner.sh" > "$test_home/install.log"
+  test ! -e "$test_home/personalize"
+  test ! -e "$test_home/.local/bin/bwork-boot-update"
+  assert_contains "$test_home/install.log" 'left its helper and hook unchanged'
+}
+run_owned_startup_upgrade() {
+  local test_home
+  test_home=$(mktemp -d)
+  HOME="$test_home" bash "$dotfiles/install-bwork-runner.sh" > "$test_home/install.log"
+  printf 'old managed helper\n' > "$test_home/.local/bin/bwork-boot-update"
+  HOME="$test_home" bash "$dotfiles/install-bwork-runner.sh" >> "$test_home/install.log"
+  cmp "$helper" "$test_home/.local/bin/bwork-boot-update"
+  assert_count "$test_home/personalize" '# >>> bwork-runner boot update (dotfiles) >>>' 1
+  printf 'other bwork-runner startup\n' >> "$test_home/personalize"
+  printf 'preserve while external hook exists\n' > "$test_home/.local/bin/bwork-boot-update"
+  HOME="$test_home" bash "$dotfiles/install-bwork-runner.sh" >> "$test_home/install.log"
+  assert_contains "$test_home/.local/bin/bwork-boot-update" 'preserve while external hook exists'
+}
 run_missing
 run_non_main
 run_dirty
 run_tracking
 run_delayed_and_locked
 run_install_idempotence
+run_existing_startup
+run_startup_opt_out
+run_owned_startup_upgrade
 echo 'portable runner bootstrap tests passed'

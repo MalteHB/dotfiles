@@ -20,7 +20,7 @@ for ((waited=0; waited<wait_seconds; waited++)); do
   sleep 1 9>&-
 done
 if [[ ! -x "$runner" ]]; then
-  echo "skip: no runner at $runner"
+  echo "skip: no runner at $runner; clone the repository to $repo, then run bwork-boot-update again"
   exit 0
 fi
 
