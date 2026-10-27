@@ -3,6 +3,7 @@ set -euo pipefail
 
 DOTFILES_DIR="$(cd "$(dirname "$0")" && pwd)"
 MARKER="# >>> dotfiles zsh-switch >>>"
+RUNNER_MARKER="# >>> bwork-runner boot update (dotfiles) >>>"
 
 # 0. Wait for apt locks (startup script may be installing packages concurrently)
 echo "Waiting for apt locks..."
@@ -23,6 +24,9 @@ if ! command -v zsh >/dev/null 2>&1; then
   done
   command -v zsh >/dev/null 2>&1 || { echo "ERROR: zsh failed to install"; exit 1; }
 fi
+
+echo "Installing bwork runner boot helper..."
+install -D -m 0755 "$DOTFILES_DIR/bwork-boot-update" "$HOME/.local/bin/bwork-boot-update"
 
 # 1. Install Oh My Zsh (unattended, skip if present)
 if [[ ! -d "$HOME/.oh-my-zsh" ]]; then
@@ -70,7 +74,24 @@ for rc in "$HOME/.bashrc" "$HOME/.profile"; do
   fi
 done
 
-# 8. Set default shell to zsh
+PERSONALIZE="$HOME/personalize"
+if [[ ! -e "$PERSONALIZE" ]]; then
+  printf '#!/usr/bin/env bash\n' > "$PERSONALIZE"
+fi
+chmod 0755 "$PERSONALIZE"
+if ! grep -qF "$RUNNER_MARKER" "$PERSONALIZE"; then
+  printf '\n' >> "$PERSONALIZE"
+  cat >> "$PERSONALIZE" <<'EOF'
+# >>> bwork-runner boot update (dotfiles) >>>
+if [ -x "$HOME/.local/bin/bwork-boot-update" ]; then
+  mkdir -p "$HOME/.local/state/bwork-runner"
+  setsid -f "$HOME/.local/bin/bwork-boot-update" < /dev/null > /dev/null 2>&1 || true
+fi
+# <<< bwork-runner boot update (dotfiles) <<<
+EOF
+fi
+
+# 9. Set default shell to zsh
 ZSH_PATH="$(command -v zsh || true)"
 if [[ -n "$ZSH_PATH" ]]; then
   current_shell="$(getent passwd "$(whoami)" | cut -d: -f7)"
